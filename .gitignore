@@ -1,0 +1,13 @@
+node_modules/
+.venv/
+__pycache__/
+*.py[cod]
+dist/
+.cache/
+*.log
+.env
+.env.*
+!.env.example
+*.safetensors
+*.pt
+*.pth
