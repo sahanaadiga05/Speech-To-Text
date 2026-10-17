@@ -143,3 +143,110 @@ p.file-error {
   background: #fff2f3;      /* Light red error background. */
   color: #9f2634;           /* Readable dark red text. */
 }
+main > .wide-card {
+  grid-column: 1 / -1; /* Span both desktop columns. */
+}
+
+section .session-actions {
+  display: flex;   /* Place action buttons beside each other. */
+  flex-wrap: wrap; /* Let them wrap on narrow screens. */
+  gap: 10px;      /* Separate the buttons. */
+}
+
+button.secondary-button {
+  background: #ffffff;       /* Give Stop a secondary appearance. */
+  color: #334766;            /* Dark, readable button text. */
+  border: 1px solid #c9d5e5; /* Keep its boundary visible. */
+}
+
+button.secondary-button:hover:not(:disabled) {
+  background: #edf2f9; /* Show hover feedback. */
+}
+
+progress {
+  width: 100%;           /* Fill the card's available width. */
+  height: 12px;          /* Make progress easy to see. */
+  accent-color: #1d4ed8; /* Match the primary button colour. */
+}
+
+section .transcript-heading {
+  display: flex;                  /* Align the heading and badge. */
+  justify-content: space-between; /* Put them at opposite sides. */
+  align-items: center;            /* Align them vertically. */
+  flex-wrap: wrap;                /* Fit narrow screens. */
+  gap: 12px;                     /* Separate wrapped items. */
+  margin-top: 0;                 /* Remove the generic div spacing. */
+}
+
+.transcript-heading h2 {
+  margin: 0; /* Align the heading neatly with the badge. */
+}
+
+.transcript-badge {
+  padding: 6px 12px;     /* Give the badge breathing room. */
+  border-radius: 999px; /* Create its pill shape. */
+  background: #eaf0ff;  /* Blue for a pending or partial result. */
+  color: #234d9b;       /* Contrasting blue text. */
+  font-size: 0.8rem;    /* Keep the badge compact. */
+  font-weight: 600;     /* Make its label readable. */
+}
+
+.transcript-badge[data-final='true'] {
+  background: #e9f7ef; /* Green identifies the final result. */
+  color: #16633f;
+}
+
+.transcript-text {
+  min-height: 140px;           /* Reserve a comfortable reading area. */
+  padding: 20px;              /* Keep text away from the boundary. */
+  border: 1px solid #dce5f0;
+  border-radius: 12px;
+  background: #f8fafd;
+  line-height: 1.85;          /* Make longer transcripts easy to read. */
+  white-space: pre-wrap;      /* Preserve any transcript line breaks. */
+  overflow-wrap: anywhere;   /* Prevent long text overflowing. */
+}
+
+section[data-status='complete'] p[role='status'] {
+  color: #16633f;        /* Success colours after session completion. */
+  border-color: #b9dfc9;
+  background: #eef9f2;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)); /* Four equal columns. */
+  gap: 16px;
+  margin: 0; /* Remove the definition list's default margins. */
+}
+
+.metrics-grid > div {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #e1e8f2;
+  border-radius: 12px;
+  background: #f8fafd;
+}
+
+.metrics-grid dt {
+  color: #52627b;
+  font-size: 0.85rem; /* Make measurement labels smaller than values. */
+}
+
+.metrics-grid dd {
+  margin: 8px 0 0;
+  font-size: 1.5rem; /* Emphasise measurement values. */
+  font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}

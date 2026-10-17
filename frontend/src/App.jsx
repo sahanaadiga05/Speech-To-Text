@@ -1,20 +1,67 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { readPcmWav } from './readWav'
+import { startTranscription } from './transcribeAudio'
 import './App.css'
 
+// Empty values display as dashes until measurements arrive.
+const EMPTY_METRICS = {
+  firstTextSeconds: null,
+  totalSeconds: null,
+  inferenceSeconds: null,
+  rtf: null,
+}
+
+// Format valid timing measurements for display.
+function formatSeconds(value) {
+  return Number.isFinite(value) ? `${value.toFixed(2)} s` : '—'
+}
+
 function App() {
-  // Service connection state.
+  // Service connection.
   const [status, setStatus] = useState('idle')
   const [message, setMessage] = useState(
     'Click below to check the connection.',
   )
 
-  // Recording selection and validation state.
+  // Recording selection.
   const [file, setFile] = useState(null)
   const [language, setLanguage] = useState('English')
   const [audioInfo, setAudioInfo] = useState(null)
   const [fileError, setFileError] = useState('')
   const [isReading, setIsReading] = useState(false)
+
+  // Information displayed during transcription.
+  const [isRunning, setIsRunning] = useState(false)
+  const [sessionState, setSessionState] = useState('idle')
+  const [sessionMessage, setSessionMessage] = useState(
+    'Choose a recording to begin.',
+  )
+  const [progress, setProgress] = useState(0)
+  const [transcription, setTranscription] = useState(null)
+  const [metrics, setMetrics] = useState(EMPTY_METRICS)
+
+  // Keep the connection controller between React renders.
+  const sessionRef = useRef(null)
+
+  // Identify the current run so old callbacks cannot overwrite new results.
+  const runIdRef = useRef(0)
+
+  // Close the session when this component is removed.
+  useEffect(() => {
+    return () => {
+      runIdRef.current += 1
+      sessionRef.current?.cancel()
+      sessionRef.current = null
+    }
+  }, [])
+
+  function resetResults() {
+    setProgress(0)
+    setTranscription(null)
+    setMetrics(EMPTY_METRICS)
+    setSessionState('idle')
+    setSessionMessage('Ready when you are.')
+  }
 
   async function checkServices() {
     setStatus('checking')
@@ -52,10 +99,10 @@ function App() {
     const input = event.target
     const selectedFile = input.files?.[0] ?? null
 
-    // Clear details belonging to the previous selection.
     setFile(null)
     setAudioInfo(null)
     setFileError('')
+    resetResults()
 
     if (!selectedFile) {
       return
@@ -65,7 +112,6 @@ function App() {
 
     try {
       const info = await readPcmWav(selectedFile)
-
       setFile(selectedFile)
       setAudioInfo(info)
     } catch (error) {
@@ -78,10 +124,144 @@ function App() {
     }
   }
 
+  function handleLanguageChange(event) {
+    setLanguage(event.target.value)
+    resetResults()
+  }
+
+  function handleStart() {
+    // Require a validated file, ready services, and no active session.
+    if (
+      !audioInfo ||
+      status !== 'ready' ||
+      isReading ||
+      sessionRef.current
+    ) {
+      return
+    }
+
+    resetResults()
+    setIsRunning(true)
+
+    // Capture the audio belonging to this particular run.
+    const pcm = audioInfo.pcm
+    const runId = runIdRef.current + 1
+    runIdRef.current = runId
+
+    try {
+      sessionRef.current = startTranscription({
+        pcm,
+        language,
+
+        onEvent(event) {
+          // Ignore callbacks belonging to an obsolete run.
+          if (runId !== runIdRef.current) {
+            return
+          }
+
+          switch (event.type) {
+            case 'connecting':
+              setSessionState('connecting')
+              setSessionMessage('Connecting to the transcription service...')
+              break
+
+            case 'session_started':
+              setSessionState('uploading')
+              setSessionMessage('Sending the recording in audio chunks...')
+              break
+
+            case 'chunk_received':
+              setProgress(
+                Math.min(
+                  100,
+                  Math.round(
+                    (event.received_bytes / pcm.byteLength) * 100,
+                  ),
+                ),
+              )
+              break
+
+            case 'upload_complete':
+              setSessionMessage(
+                'Upload complete. Waiting for the final transcript...',
+              )
+              break
+
+            case 'processing':
+              setSessionState('processing')
+              setSessionMessage('Transcribing the audio received so far...')
+              break
+
+            case 'transcript':
+              // Replace the previous revision with the newest full text.
+              setTranscription(event)
+
+              setMetrics((previous) => ({
+                ...previous,
+
+                // Record the arrival of the first nonempty transcript once.
+                firstTextSeconds: event.text.trim()
+                  ? previous.firstTextSeconds ?? event.elapsed_seconds
+                  : previous.firstTextSeconds,
+
+                inferenceSeconds: event.inference_seconds,
+                rtf: event.rtf,
+
+                // Final arrival time includes connection and upload time.
+                totalSeconds: event.final
+                  ? event.elapsed_seconds
+                  : previous.totalSeconds,
+              }))
+
+              setSessionMessage(
+                event.final
+                  ? 'Final transcript received.'
+                  : 'Partial transcript updated.',
+              )
+              break
+
+            case 'session_ended':
+              setSessionState('complete')
+              setSessionMessage('Transcription complete.')
+              break
+
+            case 'error':
+            case 'cancelled':
+              setSessionState(event.type)
+              setSessionMessage(event.message)
+              break
+
+            default:
+              // Other protocol messages need no visible change.
+              break
+          }
+
+          // Allow another run after completion, failure, or cancellation.
+          if (
+            ['session_ended', 'error', 'cancelled'].includes(event.type)
+          ) {
+            sessionRef.current = null
+            setIsRunning(false)
+          }
+        },
+      })
+    } catch (error) {
+      sessionRef.current = null
+      setIsRunning(false)
+      setSessionState('error')
+      setSessionMessage(
+        error.message || 'Could not start transcription.',
+      )
+    }
+  }
+
+  function handleStop() {
+    sessionRef.current?.cancel()
+  }
+
   return (
     <main>
       <h1>Speech to Text</h1>
-
       <p>Upload a recording and follow its transcription.</p>
 
       <section data-status={status}>
@@ -94,7 +274,7 @@ function App() {
         <button
           type="button"
           onClick={checkServices}
-          disabled={status === 'checking'}
+          disabled={status === 'checking' || isRunning}
         >
           {status === 'checking' ? 'Checking...' : 'Check connection'}
         </button>
@@ -109,12 +289,13 @@ function App() {
         </p>
 
         <div>
-          <label htmlFor="language">Language: </label>
+          <label htmlFor="language">Language</label>
 
           <select
             id="language"
             value={language}
-            onChange={(event) => setLanguage(event.target.value)}
+            onChange={handleLanguageChange}
+            disabled={isReading || isRunning}
           >
             <option value="English">English</option>
             <option value="Chinese">Chinese</option>
@@ -123,21 +304,19 @@ function App() {
         </div>
 
         <div>
-          <label htmlFor="audio-file">WAV file: </label>
+          <label htmlFor="audio-file">WAV file</label>
 
           <input
             id="audio-file"
             type="file"
             accept=".wav,audio/wav"
             onChange={handleFileChange}
-            disabled={isReading}
+            disabled={isReading || isRunning}
           />
         </div>
 
         {isReading && (
-          <p role="status">
-            Reading and checking the recording...
-          </p>
+          <p role="status">Reading and checking the recording...</p>
         )}
 
         {fileError && (
@@ -150,13 +329,109 @@ function App() {
           <p>
             <strong>{file.name}</strong>
             <br />
-            Duration: {audioInfo.audioSeconds.toFixed(3)} seconds
-            <br />
-            Size: {(file.size / 1024).toFixed(1)} KiB
+            {audioInfo.audioSeconds.toFixed(3)} seconds
+            {' · '}
+            {(file.size / 1024).toFixed(1)} KiB
             <br />
             16 kHz · Mono · 16-bit PCM
           </p>
         )}
+
+        <div className="session-actions">
+          <button
+            type="button"
+            onClick={handleStart}
+            disabled={
+              status !== 'ready' ||
+              !audioInfo ||
+              isReading ||
+              isRunning
+            }
+          >
+            {isRunning ? 'Transcribing...' : 'Start transcription'}
+          </button>
+
+          {isRunning && (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handleStop}
+            >
+              Stop session
+            </button>
+          )}
+        </div>
+
+        <div>
+          <label htmlFor="audio-upload">
+            Audio upload: {progress}%
+          </label>
+
+          <progress id="audio-upload" value={progress} max="100" />
+        </div>
+      </section>
+
+      <section
+        className="wide-card"
+        data-status={sessionState}
+      >
+        <div className="transcript-heading">
+          <h2>Transcript</h2>
+
+          <span
+            className="transcript-badge"
+            data-final={Boolean(transcription?.final)}
+          >
+            {transcription
+              ? transcription.final
+                ? 'Final transcript'
+                : `Revision ${transcription.revision}`
+              : 'Awaiting audio'}
+          </span>
+        </div>
+
+        <p role="status" aria-live="polite">
+          {sessionMessage}
+        </p>
+
+        <div className="transcript-text" aria-live="polite">
+          {transcription?.text ||
+            (transcription?.final
+              ? 'No speech was recognised.'
+              : 'Your transcript will appear here.')}
+        </div>
+
+        <p>Partial text may change as more audio becomes available.</p>
+      </section>
+
+      <section className="wide-card">
+        <h2>Performance</h2>
+
+        <dl className="metrics-grid">
+          <div>
+            <dt>First text latency</dt>
+            <dd>{formatSeconds(metrics.firstTextSeconds)}</dd>
+          </div>
+
+          <div>
+            <dt>Final result time</dt>
+            <dd>{formatSeconds(metrics.totalSeconds)}</dd>
+          </div>
+
+          <div>
+            <dt>Latest inference time</dt>
+            <dd>{formatSeconds(metrics.inferenceSeconds)}</dd>
+          </div>
+
+          <div>
+            <dt>Latest request RTF</dt>
+            <dd>
+              {Number.isFinite(metrics.rtf)
+                ? metrics.rtf.toFixed(3)
+                : '—'}
+            </dd>
+          </div>
+        </dl>
       </section>
     </main>
   )
