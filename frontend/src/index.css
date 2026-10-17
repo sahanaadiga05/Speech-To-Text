@@ -1,0 +1,27 @@
+:root {
+  font-family: 'Segoe UI', Arial, sans-serif; /* Use familiar, readable fonts. */
+  color: #172b4d;                           /* Dark text for contrast. */
+  background: #f3f6fb;                      /* Soft page background. */
+  color-scheme: light;                      /* Keep native controls light. */
+  line-height: 1.6;                         /* Give text comfortable spacing. */
+}
+
+* {
+  box-sizing: border-box; /* Include padding and borders in element widths. */
+}
+
+body {
+  margin: 0;          /* Remove the browser's default outer spacing. */
+  min-width: 320px;   /* Support narrow phone-sized screens. */
+  min-height: 100vh;  /* Fill at least the browser window's height. */
+}
+
+button,
+input,
+select {
+  font: inherit; /* Make form controls use the application's font. */
+}
+
+#root {
+  min-height: 100vh; /* Let the React application fill the window. */
+}

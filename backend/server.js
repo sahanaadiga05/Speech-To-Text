@@ -1,8 +1,9 @@
 const express = require("express");
 const http = require("node:http");
 const { WebSocket, WebSocketServer } = require("ws");
-const { pcmToWav } = require("./wav");
-const { transcribeWav } = require("./inferenceClient");
+const {
+    createIncrementalTranscriber
+} = require("./incrementalTranscriber");
 
 const HOST = "127.0.0.1";
 const PORT = 3000;
@@ -11,7 +12,6 @@ const INFERENCE_URL = "http://127.0.0.1:8001";
 const app = express();
 const server = http.createServer(app);
 
-// WebSockets share the existing HTTP server and port.
 const wss = new WebSocketServer({
     server: server,
     path: "/ws",
@@ -25,11 +25,9 @@ wss.on("error", (error) => {
 wss.on("connection", (socket) => {
     console.log("WebSocket client connected.");
 
-    // Each connection has its own session.
     let session = null;
 
     const send = (payload) => {
-        // Send only while this connection is open.
         if (socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify(payload));
         }
@@ -44,10 +42,10 @@ wss.on("connection", (socket) => {
         message: "Connected to the Node.js WebSocket server."
     });
 
-    socket.on("message", async (data, isBinary) => {
-        // Binary messages contain raw PCM audio samples.
+    socket.on("message", (data, isBinary) => {
+        // Receive binary PCM audio.
         if (isBinary) {
-            if (session === null || session.processing === true) {
+            if (session === null || session.ending === true) {
                 send({
                     type: "error",
                     message: "This session is not accepting audio."
@@ -93,10 +91,13 @@ wss.on("connection", (socket) => {
                 received_bytes: session.received_bytes,
                 audio_seconds: session.received_bytes / byteRate
             });
+
+            // Request a newer snapshot when enough audio has arrived.
+            session.transcriber.update();
             return;
         }
 
-        // Text messages contain JSON session commands.
+        // Receive JSON control commands.
         let message;
 
         try {
@@ -130,15 +131,29 @@ wss.on("connection", (socket) => {
                 return;
             }
 
-            session = {
+            const activeSession = {
                 language: language,
                 sample_rate: 16000,
                 channels: 1,
                 format: "pcm_s16le",
                 chunks: [],
                 received_bytes: 0,
-                processing: false
+                ending: false,
+                transcriber: null
             };
+
+            activeSession.transcriber = createIncrementalTranscriber(
+                activeSession,
+                INFERENCE_URL,
+                send,
+                () => {
+                    if (session === activeSession) {
+                        session = null;
+                    }
+                }
+            );
+
+            session = activeSession;
 
             send({
                 type: "session_started",
@@ -159,90 +174,16 @@ wss.on("connection", (socket) => {
                 return;
             }
 
-            if (session.processing === true) {
+            if (session.ending === true) {
                 send({
                     type: "error",
-                    message: "This session is already being transcribed."
+                    message: "This session is already finishing."
                 });
                 return;
             }
 
-            // An empty session can end without calling Python.
-            if (session.received_bytes === 0) {
-                session = null;
-                send({ type: "session_ended" });
-                return;
-            }
-
-            // Preserve this session while awaiting Python.
-            const activeSession = session;
-            activeSession.processing = true;
-
-            try {
-                const pcm = Buffer.concat(
-                    activeSession.chunks,
-                    activeSession.received_bytes
-                );
-
-                const wav = pcmToWav(pcm);
-
-                const byteRate =
-                    activeSession.sample_rate *
-                    activeSession.channels *
-                    2;
-
-                send({
-                    type: "audio_ready",
-                    pcm_bytes: pcm.length,
-                    wav_bytes: wav.length,
-                    audio_seconds: pcm.length / byteRate
-                });
-
-                send({
-                    type: "processing",
-                    message: "Transcribing audio on CPU."
-                });
-
-                const result = await transcribeWav(
-                    wav,
-                    activeSession.language,
-                    INFERENCE_URL
-                );
-
-                // Disconnection clears session while Python may still run.
-                if (session !== activeSession) {
-                    return;
-                }
-
-                send({
-                    type: "transcript",
-                    final: true,
-                    language: result.language,
-                    text: result.text,
-                    audio_seconds: result.audio_seconds,
-                    inference_seconds: result.inference_seconds,
-                    rtf: result.rtf
-                });
-
-                send({ type: "session_ended" });
-            } catch (error) {
-                console.error(
-                    "WebSocket transcription failed:",
-                    error.message
-                );
-
-                if (session === activeSession) {
-                    send({
-                        type: "error",
-                        message: error.message
-                    });
-                }
-            } finally {
-                if (session === activeSession) {
-                    session = null;
-                }
-            }
-
+            // Flush the complete audio and finish after its final result.
+            session.transcriber.finish();
             return;
         }
 
@@ -253,12 +194,15 @@ wss.on("connection", (socket) => {
     });
 
     socket.on("close", () => {
-        session = null;
+        if (session !== null) {
+            session.transcriber.stop();
+            session = null;
+        }
+
         console.log("WebSocket client disconnected.");
     });
 });
 
-// Parse JSON bodies for REST endpoints that accept JSON.
 app.use(express.json({ limit: "64kb" }));
 
 app.get("/api/health", (req, res) => {
@@ -356,7 +300,6 @@ app.post(
     }
 );
 
-// Handle REST body-parser errors, including oversized uploads.
 app.use((error, req, res, next) => {
     console.error("Request processing failed:", error.message);
 

@@ -1,0 +1,145 @@
+main {
+  width: min(1080px, 100%); /* Limit desktop width while fitting small screens. */
+  margin: 0 auto;           /* Centre the page horizontally. */
+  padding: 56px 24px 72px;  /* Space above, beside, and below the content. */
+  display: grid;           /* Arrange content using CSS Grid. */
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 24px;               /* Separate the grid items. */
+  align-items: start;       /* Align both cards at their top edges. */
+}
+
+main > h1 {
+  grid-column: 1 / -1;              /* Let the heading span both columns. */
+  margin: 0;                       /* Remove default heading margins. */
+  font-size: clamp(2rem, 5vw, 3rem); /* Scale the heading with screen width. */
+  line-height: 1.15;                /* Keep a large heading compact. */
+  letter-spacing: -0.04em;          /* Slightly tighten the heading letters. */
+}
+
+main > p {
+  grid-column: 1 / -1; /* Let the introduction span both columns. */
+  margin: -12px 0 8px; /* Keep it close to the heading. */
+  color: #52627b;      /* Give supporting text less visual emphasis. */
+}
+
+main > section {
+  min-width: 0;                                      /* Allow cards to shrink. */
+  padding: 28px;                                     /* Space inside each card. */
+  background: #ffffff;                               /* White card surface. */
+  border: 1px solid #dce5f0;                          /* Subtle card boundary. */
+  border-radius: 18px;                               /* Round the card corners. */
+  box-shadow: 0 8px 28px rgba(23, 43, 77, 0.05);      /* Add gentle depth. */
+}
+
+h2 {
+  margin: 0 0 18px;   /* Leave space below section headings. */
+  font-size: 1.2rem;  /* Keep them smaller than the page heading. */
+}
+
+section > p {
+  color: #52627b;           /* Style instructions and file information. */
+  overflow-wrap: anywhere;  /* Prevent long filenames overflowing the card. */
+}
+
+section > div {
+  display: grid;     /* Place each label above its input. */
+  gap: 8px;          /* Separate the label and control. */
+  margin-top: 20px;  /* Separate consecutive fields. */
+}
+
+label {
+  font-size: 0.9rem; /* Keep labels compact. */
+  font-weight: 600;  /* Make them easy to identify. */
+}
+
+select,
+input[type='file'] {
+  width: 100%;                 /* Fill the available card width. */
+  min-height: 48px;             /* Provide comfortable interaction targets. */
+  padding: 12px;               /* Add internal spacing. */
+  border: 1px solid #c9d5e5;    /* Make control boundaries visible. */
+  border-radius: 10px;         /* Match the rounded card style. */
+  background: #f8fafd;         /* Distinguish inputs from the card surface. */
+  color: #172b4d;              /* Keep control text readable. */
+}
+
+input[type='file'] {
+  padding: 8px;       /* Leave room for the file chooser button. */
+  font-size: 0.9rem;  /* Help long filenames fit. */
+}
+
+input[type='file']::file-selector-button {
+  margin-right: 12px;      /* Separate the button from the filename. */
+  padding: 10px 12px;      /* Give the chooser button comfortable spacing. */
+  border: 0;              /* Remove its default border. */
+  border-radius: 7px;     /* Round its corners. */
+  background: #e7eefc;    /* Use a softer blue for this secondary action. */
+  color: #234d9b;         /* Use contrasting blue text. */
+  font: inherit;         /* Match the surrounding control text. */
+  cursor: pointer;       /* Indicate that the button is clickable. */
+}
+
+button {
+  min-height: 46px;        /* Make the action easy to click. */
+  padding: 12px 18px;      /* Space around the button text. */
+  border: 0;              /* Remove the default button border. */
+  border-radius: 10px;    /* Match the other controls. */
+  background: #1d4ed8;    /* Blue for the primary action. */
+  color: #ffffff;        /* White text against the blue background. */
+  font-weight: 600;       /* Make the action label prominent. */
+  cursor: pointer;       /* Show that the button is interactive. */
+}
+
+button:hover:not(:disabled) {
+  background: #1e40af; /* Darken enabled buttons when hovered. */
+}
+
+button:disabled {
+  opacity: 0.65; /* Visually indicate temporary unavailability. */
+  cursor: wait;  /* Indicate that an operation is running. */
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 3px solid #86aaf5; /* Show keyboard users which control is focused. */
+  outline-offset: 3px;       /* Separate the outline from the control. */
+}
+
+p[role='status'] {
+  padding: 14px 16px;         /* Give the status message its own space. */
+  border: 1px solid #dce5f0;  /* Define the status area. */
+  border-radius: 10px;       /* Match the other surfaces. */
+  background: #f3f6fb;       /* Use a neutral initial status colour. */
+}
+
+section[data-status='ready'] p[role='status'] {
+  color: #16633f;        /* Readable green text for success. */
+  border-color: #b9dfc9; /* A soft green boundary. */
+  background: #eef9f2;   /* A light green success background. */
+}
+
+section[data-status='error'] p[role='status'] {
+  color: #9f2634;        /* Readable red text for failure. */
+  border-color: #edc1c7; /* A soft red boundary. */
+  background: #fff2f3;   /* A light red error background. */
+}
+
+@media (max-width: 720px) {
+  main {
+    grid-template-columns: 1fr; /* Stack the cards on smaller screens. */
+    padding: 32px 16px 48px;    /* Reduce outer spacing on small screens. */
+    gap: 20px;                 /* Keep the stacked layout comfortable. */
+  }
+
+  main > section {
+    padding: 22px; /* Preserve useful space inside narrow cards. */
+  }
+}
+p.file-error {
+  padding: 14px 16px;        /* Space around the error message. */
+  border: 1px solid #edc1c7; /* Soft red boundary. */
+  border-radius: 10px;      /* Match the other controls. */
+  background: #fff2f3;      /* Light red error background. */
+  color: #9f2634;           /* Readable dark red text. */
+}

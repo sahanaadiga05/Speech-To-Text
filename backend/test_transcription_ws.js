@@ -19,6 +19,12 @@ let pacingTimer = null;
 let finalReceived = false;
 let completed = false;
 
+const testStarted = performance.now();
+
+function elapsedSeconds() {
+    return ((performance.now() - testStarted) / 1000).toFixed(3);
+}
+
 const socket = new WebSocket("ws://127.0.0.1:3000/ws");
 
 const deadline = setTimeout(() => {
@@ -33,7 +39,11 @@ function sendNextChunk() {
     }
 
     if (offset >= pcm.length) {
-        console.log("Upload complete. Waiting for transcription.");
+        console.log(
+    "Elapsed:",
+    elapsedSeconds(),
+    "seconds; upload complete. Waiting for transcription."
+);
 
         socket.send(JSON.stringify({
             type: "end"
@@ -59,7 +69,7 @@ socket.on("message", (data) => {
     const message = JSON.parse(data.toString());
 
     if (message.type !== "chunk_received") {
-        console.log("Received:", message);
+        console.log("Elapsed:", elapsedSeconds(), "seconds; received:", message);
     }
 
     if (message.type === "connected") {

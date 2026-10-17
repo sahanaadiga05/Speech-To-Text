@@ -1,16 +1,12 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import ClassVar
 from io import BytesIO
+from pathlib import Path
 from threading import Lock
 from time import perf_counter
+from typing import ClassVar
 
-import torch
-
-# Set CPU compute threads before importing and loading Qwen.
-torch.set_num_threads(6)
-
-from qwen_asr import Qwen3ASRModel
+import sherpa_onnx
 import soundfile as sf
 
 
@@ -19,16 +15,25 @@ PORT = 8001
 
 MODEL_ID = "Qwen/Qwen3-ASR-0.6B"
 SAMPLE_RATE = 16000
+CPU_THREADS = 6
 
 MAX_REQUEST_BYTES = 2_000_000
 MAX_AUDIO_SECONDS = 60
 
-# Allow only one inference request to use the shared model at a time.
+# Resolve model files relative to this script, regardless of terminal location.
+MODEL_DIR = (
+    Path(__file__).resolve().parent
+    / "onnx-test"
+    / "sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25"
+)
+
+# Only one request may run inference on the shared recognizer at a time.
 MODEL_LOCK = Lock()
 
 
 class InferenceHandler(BaseHTTPRequestHandler):
-    model: ClassVar[Qwen3ASRModel | None] = None
+    # Every request handler shares the recognizer loaded during startup.
+    model: ClassVar[sherpa_onnx.OfflineRecognizer | None] = None
 
     def send_json(self, status, payload):
         body = json.dumps(payload).encode("utf-8")
@@ -47,9 +52,7 @@ class InferenceHandler(BaseHTTPRequestHandler):
             self.send_json(404, {"error": "Endpoint not found."})
             return
 
-        model = self.model
-
-        if model is None:
+        if self.model is None:
             self.send_json(503, {"error": "Model is not ready."})
             return
 
@@ -58,7 +61,8 @@ class InferenceHandler(BaseHTTPRequestHandler):
             {
                 "status": "ready",
                 "model": MODEL_ID,
-                "device": str(model.model.device),
+                "device": "cpu",
+                "runtime": "sherpa-onnx",
             },
         )
 
@@ -73,7 +77,7 @@ class InferenceHandler(BaseHTTPRequestHandler):
             self.send_json(503, {"error": "Model is not ready."})
             return
 
-        # Read and validate the uploaded WAV file.
+        # Read and validate the uploaded WAV file before running inference.
         try:
             length = int(self.headers.get("Content-Length", "0"))
 
@@ -95,6 +99,7 @@ class InferenceHandler(BaseHTTPRequestHandler):
             if len(raw) != length:
                 raise ValueError("The audio upload was incomplete.")
 
+            # Decode the uploaded bytes directly, without a temporary file.
             with sf.SoundFile(BytesIO(raw)) as wav:
                 if (
                     wav.format not in ("WAV", "WAVEX")
@@ -138,7 +143,7 @@ class InferenceHandler(BaseHTTPRequestHandler):
             self.send_json(408, {"error": "Audio upload timed out."})
             return
 
-        # Reject overlapping inference instead of building an unbounded queue.
+        # Reject overlapping inference requests instead of waiting indefinitely.
         if not MODEL_LOCK.acquire(blocking=False):
             self.send_json(
                 429,
@@ -147,22 +152,22 @@ class InferenceHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            # Print before starting the timer.
-            print(
-                "PyTorch compute threads:",
-                torch.get_num_threads(),
-                flush=True,
-            )
-
             started = perf_counter()
 
-            results = model.transcribe(
-                audio=(audio, SAMPLE_RATE),
-                language=language,
-            )
+            # Create fresh recognition state for this particular request.
+            stream = model.create_stream()
 
+            # Force the language chosen by the client.
+            stream.set_option("language", language)
+
+            # Pass the decoded audio samples to the ONNX recognizer.
+            stream.accept_waveform(SAMPLE_RATE, audio)
+
+            # Run transcription and wait for the result.
+            model.decode_stream(stream)
+
+            text = stream.result.text
             inference_seconds = perf_counter() - started
-            result = results[0]
 
         except Exception as error:
             print("Inference failed:", error, flush=True)
@@ -173,13 +178,15 @@ class InferenceHandler(BaseHTTPRequestHandler):
             return
 
         finally:
+            # Release the lock even when transcription raises an exception.
             MODEL_LOCK.release()
 
         self.send_json(
             200,
             {
-                "language": result.language,
-                "text": result.text,
+                # This reports the requested language, not language detection.
+                "language": language,
+                "text": text,
                 "audio_seconds": round(audio_seconds, 3),
                 "inference_seconds": round(inference_seconds, 3),
                 "rtf": round(
@@ -197,17 +204,29 @@ if __name__ == "__main__":
     )
 
     try:
-        print("Loading Qwen3-ASR on CPU...", flush=True)
+        print("Loading Qwen3-ASR ONNX on CPU...", flush=True)
+        load_started = perf_counter()
 
-        InferenceHandler.model = Qwen3ASRModel.from_pretrained(
-            MODEL_ID,
-            device_map="cpu",
-            dtype=torch.float32,
-            attn_implementation="sdpa",
-            max_inference_batch_size=1,
-            max_new_tokens=256,
+        # Load the model once and reuse it across HTTP requests.
+        InferenceHandler.model = (
+            sherpa_onnx.OfflineRecognizer.from_qwen3_asr(
+                conv_frontend=str(MODEL_DIR / "conv_frontend.onnx"),
+                encoder=str(MODEL_DIR / "encoder.int8.onnx"),
+                decoder=str(MODEL_DIR / "decoder.int8.onnx"),
+                tokenizer=str(MODEL_DIR / "tokenizer"),
+                num_threads=CPU_THREADS,
+                sample_rate=SAMPLE_RATE,
+                feature_dim=128,
+                provider="cpu",
+                max_new_tokens=256,
+            )
         )
 
+        load_seconds = perf_counter() - load_started
+        print(
+            f"Model loading time: {load_seconds:.3f} seconds",
+            flush=True,
+        )
         print(
             f"Inference helper ready at http://{HOST}:{PORT}/health",
             flush=True,
