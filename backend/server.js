@@ -20,22 +20,109 @@ wss.on("error", (error) => {
     console.error("WebSocket server error:", error.message);
 });
 
-wss.on("connection", (socket) => {
-    console.log("Websocket client connected");
+wss.on("connection", (socket) =>{
+    console.log("WebSocket client connected");
+    
+    let session = null;
+    
+    const send= (payload) =>{
+        socket.send(JSON.stringify(payload));
+    };
 
-    socket.on("error", (error) => {
+    socket.on("error", (error) =>{
         console.error("Websocket client error: ", error.message);
     });
 
-    socket.send(JSON.stringify ({
+    send({
         type: "connected",
-        message: "Connected to the Node.js websocket server"
-    }));
+        message: "Connected to the node.js websocket server"
+    });
+
+    socket.on("message", (data, isBinary) =>{
+        if(isBinary) {
+            send({
+                type:"error",
+                message: "Audio chunk handling is not implemented yet."
+            });
+            return;
+        }
+
+        let message;
+
+        try{
+            message = JSON.parse(data.toString());
+    } catch{
+        send({
+            type:"error",
+            message: "send valid JSON for session commands"
+        });
+        return;
+    }
+
+    if(message?.type === "start"){
+        if(session !== null){
+            send({
+                type:"error",
+                message:"A session is already active"
+            });
+            return;
+        }
+
+        const language = message.language ?? "English";
+
+        if(!["English", "Chinese", "Indonesian"].includes(language)){
+            send({
+                type:"error",
+                message:"Unsupported language"
+            });
+            return;
+        }
+
+        session= {
+            language: language,
+            sample_rate: 16000,
+            channels: 1,
+            format: "pcm_s16le"
+            
+        };
+
+        send({ type: "session_started", ...session});
+        return;
+    }
+
+    if(message?.type === "end"){
+        if(session === null){
+            send({
+                type:"error",
+                message:"No active session to end"
+            });
+            return;
+        }
+
+        session = null;
+
+        send({ 
+            type: "session_ended"
+        });
+        return;
+    }
+
+    send({
+        type:"error",
+        message: "unknown session command"
+    });
+
+  
+
+    });
 
     socket.on("close", () =>{
+        session = null,
         console.log("Websocket client disconnected");
     });
 });
+
+
 
 app.use(express.json({ limit: "64kb" }));
 
