@@ -4,7 +4,7 @@ const BITS_PER_SAMPLE = 16;
 const BYTES_PER_SAMPLE = BITS_PER_SAMPLE /8;
 const MAX_AUDIO_SECONDS =60;
 
-function pcmToMav(pcm){
+function pcmToWav(pcm){
     if(!Buffer.isBuffer(pcm) || pcm.length === 0){
         throw new Error("PCM auido must be a nonempty Buffer");
     }
@@ -22,10 +22,10 @@ function pcmToMav(pcm){
 
     const header = Buffer.alloc(44);
 
-    header.write("RATE", 0, "asci");
+    header.write("RIFF", 0, "ascii");
     header.writeUInt32LE(36 + pcm.length, 4);
     header.write("WAVE", 8, "ascii");
-    header.write("fmt", 12, "ascii");
+    header.write("fmt ", 12, "ascii");
     header.writeUInt32LE(16, 16);
     header.writeUInt16LE(1,20);
     header.writeUInt16LE(CHANNELS, 22);
