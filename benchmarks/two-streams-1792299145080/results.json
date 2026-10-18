@@ -1,0 +1,18 @@
+{
+  "streams_requested": 2,
+  "streams_passed": 1,
+  "results": [
+    {
+      "stream": 1,
+      "exit_code": 1,
+      "signal": null,
+      "log": "C:\\BACKEND\\STT\\benchmarks\\two-streams-1792299145080\\stream-1.log"
+    },
+    {
+      "stream": 2,
+      "exit_code": 0,
+      "signal": null,
+      "log": "C:\\BACKEND\\STT\\benchmarks\\two-streams-1792299145080\\stream-2.log"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "language": "Chinese",
+  "audio_file": "noise2.wav",
+  "reference_source": "Model package: noise2.wav supplied transcript",
+  "normalization": "Remove Unicode punctuation and all whitespace",
+  "reference_text": "拨号，请再说一次，请说出您要拨打的号码。幺三五八幺八八七五七。一三五八二八八八幺八八。纠正纠正。九六九。纠正纠正，不是九六。",
+  "hypothesis_text": "拨号，请再说一次，请说出你要拨打的号码：幺三五八幺八八七五五七。一三五八二八八八幺八八。交通，交通，九六九，交通，交通，不是九六。",
+  "reference_characters": 53,
+  "correct_characters": 44,
+  "substitutions": 9,
+  "deletions": 0,
+  "insertions": 1,
+  "cer": 0.18867924528301888,
+  "cer_percent": 18.868
+}

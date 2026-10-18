@@ -1,0 +1,31 @@
+{
+  "streams_requested": 1,
+  "streams_passed": 1,
+  "client_exit_code": 0,
+  "measurement_seconds": 25.231,
+  "physical_cores": 6,
+  "logical_cpus": 12,
+  "total_ram_gib": 7.38,
+  "minimum_available_ram_mib": 341.91,
+  "peak_system_cpu_percent": 94.8,
+  "processes": {
+    "node_backend": {
+      "pid": 27412,
+      "baseline_rss_mib": 16.34,
+      "baseline_private_mib": 24.66,
+      "peak_rss_mib": 30.05,
+      "peak_private_mib": 32.32,
+      "peak_cpu_percent_of_machine": 2.61,
+      "average_cpu_percent_of_machine": 0.11
+    },
+    "python_asr": {
+      "pid": 15080,
+      "baseline_rss_mib": 9.75,
+      "baseline_private_mib": 1416.75,
+      "peak_rss_mib": 1714.77,
+      "peak_private_mib": 2660.49,
+      "peak_cpu_percent_of_machine": 58.66,
+      "average_cpu_percent_of_machine": 33.42
+    }
+  }
+}

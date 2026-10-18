@@ -1,0 +1,15 @@
+{
+  "language": "English",
+  "audio_file": "english_accuracy_16k.wav",
+  "reference_source": "Model package: f1_noise.wav supplied transcript",
+  "normalization": "Lowercase, remove punctuation, normalize spaces",
+  "reference_text": "Okay, Charles. It looks like we have a problem with the radio. What happened? Yeah, someone spilled water on their machine. I uh, yeah. Charles, can you hear us? Mamma mia.",
+  "hypothesis_text": "Okay, Charles. It looks like we have a problem with the radio. What happened? Yeah, someone spilled water on their machine. I, yeah. Charles, can you hear us? Oh, my god.",
+  "reference_words": 31,
+  "correct_words": 28,
+  "substitutions": 2,
+  "deletions": 1,
+  "insertions": 1,
+  "wer": 0.12903225806451613,
+  "wer_percent": 12.903
+}
