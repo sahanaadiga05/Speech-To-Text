@@ -5,15 +5,16 @@ main {
   display: grid;           /* Arrange content using CSS Grid. */
   grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
   gap: 24px;               /* Separate the grid items. */
-  align-items: start;       /* Align both cards at their top edges. */
+  align-items: stretch; /* Make both cards fill the same row height. */     /* Align both cards at their top edges. */
 }
 
 main > h1 {
-  grid-column: 1 / -1;              /* Let the heading span both columns. */
-  margin: 0;                       /* Remove default heading margins. */
-  font-size: clamp(2rem, 5vw, 3rem); /* Scale the heading with screen width. */
-  line-height: 1.15;                /* Keep a large heading compact. */
-  letter-spacing: -0.04em;          /* Slightly tighten the heading letters. */
+  grid-column: 1 / -1;                     /* Span the full content width. */
+  margin: 0;                              /* Remove default heading margins. */
+  font-size: clamp(2.75rem, 6vw, 4rem);     /* Make the title larger and responsive. */
+  line-height: 1.15;                       /* Keep heading lines compact. */
+  letter-spacing: 0;                      /* Use natural spacing for this font. */
+  text-align: center;                     /* Centre the title horizontally. */
 }
 
 main > p {
@@ -25,7 +26,7 @@ main > p {
 main > section {
   min-width: 0;                                      /* Allow cards to shrink. */
   padding: 28px;                                     /* Space inside each card. */
-  background: #ffffff;                               /* White card surface. */
+  background: #FF9D9D;                               /* White card surface. */
   border: 1px solid #dce5f0;                          /* Subtle card boundary. */
   border-radius: 18px;                               /* Round the card corners. */
   box-shadow: 0 8px 28px rgba(23, 43, 77, 0.05);      /* Add gentle depth. */
@@ -249,4 +250,160 @@ section[data-status='complete'] p[role='status'] {
   .metrics-grid {
     grid-template-columns: 1fr;
   }
+}
+
+@media (min-width: 721px) {
+  main {
+    width: min(1500px, 96%);
+    gap: 28px;
+  }
+
+  main > section {
+    padding: 32px;
+  }
+
+  /* Make Audio recording and Transcript equally taller. */
+  main > section:not(.wide-card) {
+    min-height: 500px;
+  }
+
+  /* Increase the space for transcript text. */
+  .transcript-text {
+    min-height: 260px;
+  }
+
+  /* Make the Performance boxes larger. */
+  .metrics-grid > div {
+    min-height: 120px;
+    padding: 24px;
+  }
+}
+
+/* Audio recording, Transcript, and Performance headings */
+main h2 {
+  font-size: 2rem;
+}
+
+/* Language, WAV file, and Audio upload labels */
+main label {
+  font-size: 1.8rem;
+}
+
+/* Instructions, status messages, and transcript text */
+main p,
+main .transcript-text {
+  font-size: 1.29rem;
+}
+
+/* Language dropdown and file chooser */
+main select,
+main select option,
+main input[type='file'] {
+  font-size: 1.2rem;
+}
+
+main input[type='file']::file-selector-button {
+  font: inherit;
+}
+
+/* Performance measurement labels */
+main .metrics-grid dt {
+  font-size: 1.37rem;
+}
+
+/* Performance values and placeholder dashes */
+main .metrics-grid dd {
+  font-size: 2.4rem;
+}
+
+/* Language dropdown, file input, transcript area, and metric boxes */
+main select,
+main input[type='file'],
+main .transcript-text,
+main .metrics-grid > div {
+  background: #F3F6FB;
+}
+
+/* Page background and main text */
+:root {
+  background: #E4F2ED;
+  color: #1E3038;
+}
+
+/* Audio recording, Transcript, and Performance cards */
+main > section {
+  background: #FFFFFF;
+  border-color: #DCE4E7;
+}
+
+/* Instructions and performance labels */
+main > p,
+section > p,
+main .metrics-grid dt {
+  color: #64767D;
+}
+
+/* Dropdown, file input, transcript, and metric boxes */
+main select,
+main select option,
+main input[type='file'],
+main .transcript-text,
+main .metrics-grid > div {
+  background: #F7F8FA;
+  border-color: #DCE4E7;
+  color: #1E3038;
+}
+
+/* Choose File button and transcript badge */
+main input[type='file']::file-selector-button,
+main .transcript-badge {
+  background: #E6F3EF;
+  color: #147D73;
+}
+
+/* Start button */
+main button {
+  background:  #0F625A;
+  color: #FFFFFF;
+}
+
+main button:hover:not(:disabled) {
+  background: #1E3038;
+}
+
+/* Stop button */
+main button.secondary-button {
+  background: #FFFFFF;
+  border-color: #DCE4E7;
+  color: #147D73;
+}
+
+main button.secondary-button:hover:not(:disabled) {
+  background: #E6F3EF;
+}
+
+/* Initial status message */
+p[role='status'] {
+  background: #F7F8FA;
+  border-color: #DCE4E7;
+}
+
+/* Completed transcription */
+section[data-status='complete'] p[role='status'],
+section[data-status='ready'] p[role='status'],
+main .transcript-badge[data-final='true'] {
+  background: #EEF5F1;
+  border-color: #DCE4E7;
+  color: #147D73;
+}
+
+/* Upload progress and keyboard focus */
+main progress {
+  accent-color: #147D73;
+}
+
+main button:focus-visible,
+main select:focus-visible,
+main input:focus-visible {
+  outline-color: #147D73;
 }

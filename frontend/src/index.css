@@ -1,11 +1,10 @@
 :root {
-  font-family: 'Segoe UI', Arial, sans-serif; /* Use familiar, readable fonts. */
-  color: #172b4d;                           /* Dark text for contrast. */
-  background: #f3f6fb;                      /* Soft page background. */
-  color-scheme: light;                      /* Keep native controls light. */
-  line-height: 1.6;                         /* Give text comfortable spacing. */
+  font-family: 'Times New Roman', Times, serif; /* Set the font throughout the app. */
+  color: #172b4d;                             /* Preserve the dark text colour. */
+  background: #92EEFF;                       /* Preserve the page background. */
+  color-scheme: light;                        /* Keep native controls light. */
+  line-height: 1.6;                           /* Keep text comfortably spaced. */
 }
-
 * {
   box-sizing: border-box; /* Include padding and borders in element widths. */
 }

@@ -3,7 +3,6 @@ import { readPcmWav } from './readWav'
 import { startTranscription } from './transcribeAudio'
 import './App.css'
 
-// Empty values display as dashes until measurements arrive.
 const EMPTY_METRICS = {
   firstTextSeconds: null,
   totalSeconds: null,
@@ -11,18 +10,35 @@ const EMPTY_METRICS = {
   rtf: null,
 }
 
-// Format valid timing measurements for display.
 function formatSeconds(value) {
   return Number.isFinite(value) ? `${value.toFixed(2)} s` : '—'
 }
 
-function App() {
-  // Service connection.
-  const [status, setStatus] = useState('idle')
-  const [message, setMessage] = useState(
-    'Click below to check the connection.',
-  )
+// Check readiness automatically when Start is clicked.
+async function checkServices(signal) {
+  const response = await fetch('/api/inference/health', {
+    signal,
+  })
 
+  if (!response.ok) {
+    throw new Error(
+      'Transcription services are unavailable. Check that the Node.js backend and Python helper are running.',
+    )
+  }
+
+  const result = await response.json()
+
+  if (
+    result.status !== 'ready' ||
+    result.inference?.status !== 'ready'
+  ) {
+    throw new Error(
+      result.error || 'The transcription model is not ready. Try again shortly.',
+    )
+  }
+}
+
+function App() {
   // Recording selection.
   const [file, setFile] = useState(null)
   const [language, setLanguage] = useState('English')
@@ -30,7 +46,7 @@ function App() {
   const [fileError, setFileError] = useState('')
   const [isReading, setIsReading] = useState(false)
 
-  // Information displayed during transcription.
+  // Transcription information.
   const [isRunning, setIsRunning] = useState(false)
   const [sessionState, setSessionState] = useState('idle')
   const [sessionMessage, setSessionMessage] = useState(
@@ -40,13 +56,12 @@ function App() {
   const [transcription, setTranscription] = useState(null)
   const [metrics, setMetrics] = useState(EMPTY_METRICS)
 
-  // Keep the connection controller between React renders.
+  // Store the current operation's cancellation control.
   const sessionRef = useRef(null)
 
-  // Identify the current run so old callbacks cannot overwrite new results.
+  // Ignore callbacks from older operations.
   const runIdRef = useRef(0)
 
-  // Close the session when this component is removed.
   useEffect(() => {
     return () => {
       runIdRef.current += 1
@@ -61,38 +76,6 @@ function App() {
     setMetrics(EMPTY_METRICS)
     setSessionState('idle')
     setSessionMessage('Ready when you are.')
-  }
-
-  async function checkServices() {
-    setStatus('checking')
-    setMessage('Checking transcription services...')
-
-    try {
-      const response = await fetch('/api/inference/health', {
-        signal: AbortSignal.timeout(10000),
-      })
-
-      const result = await response.json()
-
-      if (
-        !response.ok ||
-        result.status !== 'ready' ||
-        result.inference?.status !== 'ready'
-      ) {
-        throw new Error(
-          result.error || 'Transcription services are not ready.',
-        )
-      }
-
-      setStatus('ready')
-      setMessage('Transcription services are ready.')
-    } catch (error) {
-      console.error('Connection check failed:', error)
-      setStatus('error')
-      setMessage(
-        'Cannot connect. Check that both backend servers are running.',
-      )
-    }
   }
 
   async function handleFileChange(event) {
@@ -112,6 +95,7 @@ function App() {
 
     try {
       const info = await readPcmWav(selectedFile)
+
       setFile(selectedFile)
       setAudioInfo(info)
     } catch (error) {
@@ -129,12 +113,12 @@ function App() {
     resetResults()
   }
 
-  function handleStart() {
-    // Require a validated file, ready services, and no active session.
+  async function handleStart() {
+    // Require valid audio and prevent overlapping operations.
     if (
       !audioInfo ||
-      status !== 'ready' ||
       isReading ||
+      isRunning ||
       sessionRef.current
     ) {
       return
@@ -142,19 +126,40 @@ function App() {
 
     resetResults()
     setIsRunning(true)
+    setSessionState('checking')
+    setSessionMessage('Checking transcription services...')
 
-    // Capture the audio belonging to this particular run.
     const pcm = audioInfo.pcm
+    const selectedLanguage = language
+
     const runId = runIdRef.current + 1
     runIdRef.current = runId
 
+    // Allow Stop to cancel the readiness check.
+    const controller = new AbortController()
+
+    sessionRef.current = {
+      cancel: () => controller.abort(),
+    }
+
+    // Allow ten seconds for the readiness check.
+    const healthTimer = setTimeout(() => {
+      controller.abort()
+    }, 10000)
+
     try {
+      await checkServices(controller.signal)
+      clearTimeout(healthTimer)
+
+      if (runId !== runIdRef.current) {
+        return
+      }
+
       sessionRef.current = startTranscription({
         pcm,
-        language,
+        language: selectedLanguage,
 
         onEvent(event) {
-          // Ignore callbacks belonging to an obsolete run.
           if (runId !== runIdRef.current) {
             return
           }
@@ -162,12 +167,16 @@ function App() {
           switch (event.type) {
             case 'connecting':
               setSessionState('connecting')
-              setSessionMessage('Connecting to the transcription service...')
+              setSessionMessage(
+                'Connecting to the transcription service...',
+              )
               break
 
             case 'session_started':
               setSessionState('uploading')
-              setSessionMessage('Sending the recording in audio chunks...')
+              setSessionMessage(
+                'Sending the recording in audio chunks...',
+              )
               break
 
             case 'chunk_received':
@@ -189,17 +198,18 @@ function App() {
 
             case 'processing':
               setSessionState('processing')
-              setSessionMessage('Transcribing the audio received so far...')
+              setSessionMessage(
+                'Transcribing the audio received so far...',
+              )
               break
 
             case 'transcript':
-              // Replace the previous revision with the newest full text.
+              // Replace the previous text with the newest revision.
               setTranscription(event)
 
               setMetrics((previous) => ({
                 ...previous,
 
-                // Record the arrival of the first nonempty transcript once.
                 firstTextSeconds: event.text.trim()
                   ? previous.firstTextSeconds ?? event.elapsed_seconds
                   : previous.firstTextSeconds,
@@ -207,7 +217,6 @@ function App() {
                 inferenceSeconds: event.inference_seconds,
                 rtf: event.rtf,
 
-                // Final arrival time includes connection and upload time.
                 totalSeconds: event.final
                   ? event.elapsed_seconds
                   : previous.totalSeconds,
@@ -232,11 +241,9 @@ function App() {
               break
 
             default:
-              // Other protocol messages need no visible change.
               break
           }
 
-          // Allow another run after completion, failure, or cancellation.
           if (
             ['session_ended', 'error', 'cancelled'].includes(event.type)
           ) {
@@ -246,40 +253,42 @@ function App() {
         },
       })
     } catch (error) {
+      if (runId !== runIdRef.current) {
+        return
+      }
+
+      console.error('Could not start transcription:', error)
+
       sessionRef.current = null
       setIsRunning(false)
       setSessionState('error')
+
       setSessionMessage(
-        error.message || 'Could not start transcription.',
+        error.name === 'AbortError'
+          ? 'The connection check timed out. Check your backend and model, then try again.'
+          : error.message || 'Could not start transcription.',
       )
+    } finally {
+      clearTimeout(healthTimer)
     }
   }
 
   function handleStop() {
+    runIdRef.current += 1
+
     sessionRef.current?.cancel()
+    sessionRef.current = null
+
+    setIsRunning(false)
+    setSessionState('cancelled')
+    setSessionMessage('The transcription session was stopped.')
   }
 
   return (
     <main>
       <h1>Speech to Text</h1>
-      <p>Upload a recording and follow its transcription.</p>
 
-      <section data-status={status}>
-        <h2>Service connection</h2>
-
-        <p role="status" aria-live="polite">
-          {message}
-        </p>
-
-        <button
-          type="button"
-          onClick={checkServices}
-          disabled={status === 'checking' || isRunning}
-        >
-          {status === 'checking' ? 'Checking...' : 'Check connection'}
-        </button>
-      </section>
-
+      {/* Audio recording occupies the left grid column. */}
       <section>
         <h2>Audio recording</h2>
 
@@ -341,14 +350,13 @@ function App() {
           <button
             type="button"
             onClick={handleStart}
-            disabled={
-              status !== 'ready' ||
-              !audioInfo ||
-              isReading ||
-              isRunning
-            }
+            disabled={!audioInfo || isReading || isRunning}
           >
-            {isRunning ? 'Transcribing...' : 'Start transcription'}
+            {isRunning
+              ? sessionState === 'checking'
+                ? 'Checking services...'
+                : 'Transcribing...'
+              : 'Start transcription'}
           </button>
 
           {isRunning && (
@@ -371,10 +379,8 @@ function App() {
         </div>
       </section>
 
-      <section
-        className="wide-card"
-        data-status={sessionState}
-      >
+      {/* Transcript occupies the right grid column. */}
+      <section data-status={sessionState}>
         <div className="transcript-heading">
           <h2>Transcript</h2>
 
@@ -404,6 +410,7 @@ function App() {
         <p>Partial text may change as more audio becomes available.</p>
       </section>
 
+      {/* Performance spans both columns underneath the two cards. */}
       <section className="wide-card">
         <h2>Performance</h2>
 
