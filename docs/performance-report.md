@@ -297,3 +297,98 @@ startup, sustained load, latency and memory consumption.
 The final-request RTF of 0.399 must not be used by itself
 to infer concurrent-call capacity, because earlier cumulative
 prefixes also consume inference time.
+
+## 9. Runtime choice and researched alternative
+
+### 9.1 Why this project uses Sherpa-ONNX
+
+Initial experiments used Qwen3-ASR through the
+PyTorch/Transformers runtime on CPU. Transcription worked,
+but long processing times and low available system memory
+were observed during development.
+
+The project subsequently evaluated Qwen3-ASR with
+Sherpa-ONNX, using INT8 encoder and decoder models.
+This configuration produced usable incremental results
+on the available laptop and became the selected runtime.
+
+The measurements in Sections 3–7 describe the selected
+configuration. Earlier exploratory runs were not a controlled
+comparison between runtimes, so they should not be treated
+as a universal performance ranking.
+
+### 9.2 Alternative: Whisper with whisper.cpp
+
+whisper.cpp is a C/C++ implementation of Whisper inference.
+It supports CPU execution, Windows and quantized models.
+
+Multilingual Whisper tiny or base would be candidates for
+a future comparison. Multilingual weights are needed for
+English, Mandarin and Indonesian; .en variants are English-only.
+
+| Aspect | Current Qwen3-ASR solution | Whisper with whisper.cpp |
+|---|---|---|
+| Local testing | Implemented and measured | Researched; not benchmarked in this project |
+| CPU execution | Demonstrated through Sherpa-ONNX | Supported by the runtime |
+| Memory | Sampled peak private allocation of approximately 2.60 GiB | Depends on model and quantization; needs local measurement |
+| Incremental output | Repeated cumulative-prefix inference | Includes a microphone streaming example; integration and latency need evaluation |
+| Languages | All three requested languages returned transcripts | Multilingual models support the three requested languages |
+| Accuracy | English WER and Mandarin CER measured | Requires the same reference-based evaluation |
+
+A smaller quantized Whisper model might reduce resource
+requirements. This remains an untested hypothesis for this
+machine. Accuracy, particularly for noisy speech, numbers
+and names, would need comparison.
+
+The existence of a streaming example does not establish
+that the alternative would meet the desired latency.
+
+### 9.3 What to test next
+
+- Compare multilingual Whisper tiny and base with the selected
+  Qwen runtime using the same recordings.
+- Use comparable CPU budgets and distinguish model loading,
+  warm-up and inference measurements.
+- Measure first-text latency, final-result latency, CPU,
+  resident memory and private allocation.
+- Compare English and Indonesian WER and Mandarin CER
+  using verified references.
+- Obtain a verified Indonesian reference before scoring it.
+- Test longer recordings and multiple simultaneous streams.
+
+## 10. Conclusion
+
+The prototype demonstrates a React frontend, Node.js backend,
+WebSocket audio transfer and CPU-based Qwen3-ASR inference.
+
+Partial and final transcripts were demonstrated, and all three
+requested languages returned transcription results.
+
+The evaluation records latency, CPU and memory observations,
+reference-based English and Mandarin accuracy, a two-session
+overlap test and illustrative capacity estimates.
+
+The current helper permits one active inference request.
+Repeated cumulative-prefix processing increases computation.
+These are important constraints for future concurrency and
+latency improvements.
+
+The sizing figures are planning estimates. Target-server
+load tests are needed before claiming production capacity.
+
+Indonesian accuracy remains unscored pending a verified
+reference transcript.
+
+## 11. References
+
+- Qwen3-ASR official project:
+  https://github.com/QwenLM/Qwen3-ASR
+
+- Sherpa-ONNX official project:
+  https://github.com/k2-fsa/sherpa-onnx
+
+- whisper.cpp official project:
+  https://github.com/ggml-org/whisper.cpp
+
+- Whisper official project:
+  https://github.com/openai/whisper
