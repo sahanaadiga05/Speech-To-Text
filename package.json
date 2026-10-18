@@ -1,0 +1,9 @@
+{
+  "name": "speech-to-text",
+  "private": true,
+  "scripts": {
+    "asr": "inference\\onnx-test\\.venv\\Scripts\\python.exe -u inference\\inference_http.py",
+    "backend": "node backend/server.js",
+    "frontend": "npm --prefix frontend run dev"
+  }
+}
