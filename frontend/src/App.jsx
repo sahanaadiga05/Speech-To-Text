@@ -14,7 +14,6 @@ function formatSeconds(value) {
   return Number.isFinite(value) ? `${value.toFixed(2)} s` : '—'
 }
 
-// Check readiness automatically when Start is clicked.
 async function checkServices(signal) {
   const response = await fetch('/api/inference/health', {
     signal,
@@ -33,44 +32,73 @@ async function checkServices(signal) {
     result.inference?.status !== 'ready'
   ) {
     throw new Error(
-      result.error || 'The transcription model is not ready. Try again shortly.',
+      result.error || 'The transcription model is not ready.',
     )
   }
 }
 
 function App() {
-  // Recording selection.
   const [file, setFile] = useState(null)
   const [language, setLanguage] = useState('English')
   const [audioInfo, setAudioInfo] = useState(null)
   const [fileError, setFileError] = useState('')
   const [isReading, setIsReading] = useState(false)
 
-  // Transcription information.
   const [isRunning, setIsRunning] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
   const [sessionState, setSessionState] = useState('idle')
   const [sessionMessage, setSessionMessage] = useState(
     'Choose a recording to begin.',
   )
+
   const [progress, setProgress] = useState(0)
   const [transcription, setTranscription] = useState(null)
   const [metrics, setMetrics] = useState(EMPTY_METRICS)
 
-  // Store the current operation's cancellation control.
-  const sessionRef = useRef(null)
+  // Live elapsed time, measured from clicking Start.
+  const [elapsedSeconds, setElapsedSeconds] = useState(null)
 
-  // Ignore callbacks from older operations.
+  const sessionRef = useRef(null)
   const runIdRef = useRef(0)
+  const startedAtRef = useRef(null)
+  const clockRef = useRef(null)
 
   useEffect(() => {
     return () => {
       runIdRef.current += 1
+
+      clearInterval(clockRef.current)
+      clockRef.current = null
+
       sessionRef.current?.cancel()
       sessionRef.current = null
     }
   }, [])
 
+  function stopClock(atSeconds = null) {
+    if (clockRef.current === null) {
+      return
+    }
+
+    clearInterval(clockRef.current)
+    clockRef.current = null
+
+    if (startedAtRef.current !== null) {
+      const seconds = Number.isFinite(atSeconds)
+        ? atSeconds
+        : (performance.now() - startedAtRef.current) / 1000
+
+      setElapsedSeconds(seconds)
+    }
+  }
+
   function resetResults() {
+    clearInterval(clockRef.current)
+    clockRef.current = null
+    startedAtRef.current = null
+
+    setElapsedSeconds(null)
+    setIsProcessing(false)
     setProgress(0)
     setTranscription(null)
     setMetrics(EMPTY_METRICS)
@@ -114,7 +142,6 @@ function App() {
   }
 
   async function handleStart() {
-    // Require valid audio and prevent overlapping operations.
     if (
       !audioInfo ||
       isReading ||
@@ -124,25 +151,40 @@ function App() {
       return
     }
 
+    // Start before the readiness check.
+    const startedAt = performance.now()
+
     resetResults()
+
+    const runId = runIdRef.current + 1
+    runIdRef.current = runId
+    startedAtRef.current = startedAt
+
+    setElapsedSeconds(0)
     setIsRunning(true)
     setSessionState('checking')
     setSessionMessage('Checking transcription services...')
 
+    // Refresh the live display every 100 milliseconds.
+    clockRef.current = setInterval(() => {
+      if (runId !== runIdRef.current) {
+        return
+      }
+
+      setElapsedSeconds(
+        (performance.now() - startedAt) / 1000,
+      )
+    }, 100)
+
     const pcm = audioInfo.pcm
     const selectedLanguage = language
 
-    const runId = runIdRef.current + 1
-    runIdRef.current = runId
-
-    // Allow Stop to cancel the readiness check.
     const controller = new AbortController()
 
     sessionRef.current = {
       cancel: () => controller.abort(),
     }
 
-    // Allow ten seconds for the readiness check.
     const healthTimer = setTimeout(() => {
       controller.abort()
     }, 10000)
@@ -163,6 +205,10 @@ function App() {
           if (runId !== runIdRef.current) {
             return
           }
+
+          // Use the same Start-click origin for both timers.
+          const seconds =
+            (performance.now() - startedAt) / 1000
 
           switch (event.type) {
             case 'connecting':
@@ -197,6 +243,7 @@ function App() {
               break
 
             case 'processing':
+              setIsProcessing(true)
               setSessionState('processing')
               setSessionMessage(
                 'Transcribing the audio received so far...',
@@ -204,23 +251,28 @@ function App() {
               break
 
             case 'transcript':
-              // Replace the previous text with the newest revision.
               setTranscription(event)
+              setIsProcessing(false)
 
               setMetrics((previous) => ({
                 ...previous,
 
                 firstTextSeconds: event.text.trim()
-                  ? previous.firstTextSeconds ?? event.elapsed_seconds
+                  ? previous.firstTextSeconds ?? seconds
                   : previous.firstTextSeconds,
 
+                // These are real measurements from the helper.
                 inferenceSeconds: event.inference_seconds,
                 rtf: event.rtf,
 
                 totalSeconds: event.final
-                  ? event.elapsed_seconds
+                  ? seconds
                   : previous.totalSeconds,
               }))
+
+              if (event.final) {
+                stopClock(seconds)
+              }
 
               setSessionMessage(
                 event.final
@@ -230,12 +282,16 @@ function App() {
               break
 
             case 'session_ended':
+              stopClock(seconds)
+              setIsProcessing(false)
               setSessionState('complete')
               setSessionMessage('Transcription complete.')
               break
 
             case 'error':
             case 'cancelled':
+              stopClock(seconds)
+              setIsProcessing(false)
               setSessionState(event.type)
               setSessionMessage(event.message)
               break
@@ -259,8 +315,11 @@ function App() {
 
       console.error('Could not start transcription:', error)
 
+      stopClock()
       sessionRef.current = null
+
       setIsRunning(false)
+      setIsProcessing(false)
       setSessionState('error')
 
       setSessionMessage(
@@ -274,21 +333,73 @@ function App() {
   }
 
   function handleStop() {
+    // Ignore callbacks from the cancelled session.
     runIdRef.current += 1
+
+    stopClock()
 
     sessionRef.current?.cancel()
     sessionRef.current = null
 
     setIsRunning(false)
+    setIsProcessing(false)
     setSessionState('cancelled')
     setSessionMessage('The transcription session was stopped.')
   }
+
+  const hasStarted = elapsedSeconds !== null
+  const hasFirstText = Number.isFinite(metrics.firstTextSeconds)
+  const hasFinalResult = Number.isFinite(metrics.totalSeconds)
+
+  const waitingForFirstText =
+    isRunning && !hasFirstText && !transcription?.final
+
+  let pendingMeasurement = '—'
+
+  if (hasStarted) {
+    if (isRunning) {
+      pendingMeasurement = 'Waiting'
+    } else if (sessionState === 'cancelled') {
+      pendingMeasurement = 'Stopped'
+    } else if (sessionState === 'error') {
+      pendingMeasurement = 'Unavailable'
+    } else {
+      pendingMeasurement = 'No result'
+    }
+  }
+
+  const firstTextDisplay = hasFirstText
+    ? formatSeconds(metrics.firstTextSeconds)
+    : waitingForFirstText
+      ? formatSeconds(elapsedSeconds)
+      : '—'
+
+  const firstTextNote = hasFirstText
+    ? 'First text received'
+    : waitingForFirstText
+      ? 'Waiting for first text'
+      : hasStarted
+        ? 'No text received'
+        : 'Starts when you click Start'
+
+  const finalTimeNote = hasFinalResult
+    ? 'Final transcript received'
+    : isRunning
+      ? 'Live elapsed time'
+      : hasStarted
+        ? 'Ended without a final result'
+        : 'Starts when you click Start'
+
+  const inferenceDisplay = Number.isFinite(metrics.inferenceSeconds)
+    ? formatSeconds(metrics.inferenceSeconds)
+    : isProcessing
+      ? 'Processing…'
+      : pendingMeasurement
 
   return (
     <main>
       <h1>Speech to Text</h1>
 
-      {/* Audio recording occupies the left grid column. */}
       <section>
         <h2>Audio recording</h2>
 
@@ -379,7 +490,6 @@ function App() {
         </div>
       </section>
 
-      {/* Transcript occupies the right grid column. */}
       <section data-status={sessionState}>
         <div className="transcript-heading">
           <h2>Transcript</h2>
@@ -410,36 +520,91 @@ function App() {
         <p>Partial text may change as more audio becomes available.</p>
       </section>
 
-      {/* Performance spans both columns underneath the two cards. */}
       <section className="wide-card">
-        <h2>Performance</h2>
+  <h2>Performance</h2>
 
-        <dl className="metrics-grid">
-          <div>
-            <dt>First text latency</dt>
-            <dd>{formatSeconds(metrics.firstTextSeconds)}</dd>
-          </div>
+  <dl className="metrics-grid">
+    <div>
+      <dt>First text latency</dt>
 
-          <div>
-            <dt>Final result time</dt>
-            <dd>{formatSeconds(metrics.totalSeconds)}</dd>
-          </div>
+      <dd
+        className={
+          hasFirstText || waitingForFirstText
+            ? 'metric-number'
+            : 'metric-status'
+        }
+      >
+        {firstTextDisplay}
 
-          <div>
-            <dt>Latest inference time</dt>
-            <dd>{formatSeconds(metrics.inferenceSeconds)}</dd>
-          </div>
+        <small className="metric-note">
+          {firstTextNote}
+        </small>
+      </dd>
+    </div>
 
-          <div>
-            <dt>Latest request RTF</dt>
-            <dd>
-              {Number.isFinite(metrics.rtf)
-                ? metrics.rtf.toFixed(3)
-                : '—'}
-            </dd>
-          </div>
-        </dl>
-      </section>
+    <div>
+      <dt>Final result time</dt>
+
+      <dd
+        className={
+          hasStarted ? 'metric-number' : 'metric-status'
+        }
+      >
+        {formatSeconds(
+          metrics.totalSeconds ?? elapsedSeconds,
+        )}
+
+        <small className="metric-note">
+          {finalTimeNote}
+        </small>
+      </dd>
+    </div>
+
+    <div>
+      <dt>Latest inference time</dt>
+
+      <dd
+        className={
+          Number.isFinite(metrics.inferenceSeconds)
+            ? 'metric-number'
+            : 'metric-status'
+        }
+      >
+        {inferenceDisplay}
+
+        <small className="metric-note">
+          {isProcessing
+            ? 'Request in progress'
+            : Number.isFinite(metrics.inferenceSeconds)
+              ? 'Measured by the model service'
+              : 'Waiting for a completed request'}
+        </small>
+      </dd>
+    </div>
+
+    <div>
+      <dt>Latest request RTF</dt>
+
+      <dd
+        className={
+          Number.isFinite(metrics.rtf)
+            ? 'metric-number'
+            : 'metric-status'
+        }
+      >
+        {Number.isFinite(metrics.rtf)
+          ? metrics.rtf.toFixed(3)
+          : pendingMeasurement}
+
+        <small className="metric-note">
+          {Number.isFinite(metrics.rtf)
+            ? 'Latest completed request'
+            : 'Available after a model response'}
+        </small>
+      </dd>
+    </div>
+  </dl>
+</section>
     </main>
   )
 }

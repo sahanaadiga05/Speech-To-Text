@@ -327,7 +327,7 @@ main .metrics-grid > div {
 /* Page background and main text */
 :root {
   background: #E4F2ED;
-  color: #1D4533;
+  color: #001A6E;
 
 }
 
@@ -412,9 +412,54 @@ main input:focus-visible {
 /* Transcript text and performance result values */
 main .transcript-text,
 main .metrics-grid dd {
-  color: #165823;
+  color: #001A6E;
 }
 
 main > h1 {
   color: #092328;
+}
+
+/* Smaller measurement headings */
+main .metrics-grid dt {
+  font-size: 1.1rem;
+}
+
+/* Keep measured numbers large */
+main .metrics-grid dd {
+  margin: 10px 0 0;
+  font-size: 2.4rem;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Waiting, Processing, and Stopped stay small */
+main .metrics-grid dd.metric-status {
+  font-size: 1.05rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+/* Explanations appear below the value */
+main .metrics-grid .metric-note {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.95rem;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #64767D;
+}
+
+/* Slightly larger notes and status text */
+main .metrics-grid .metric-note,
+main .metrics-grid dd.metric-status {
+  font-size: 1.15rem;
+  color: #2A7C13;
+}
+
+/* Enlarge only the four performance headings */
+main .metrics-grid dt {
+  font-size: 1.68rem;
+  font-weight: 700;
+   color: #3A6351;
 }
