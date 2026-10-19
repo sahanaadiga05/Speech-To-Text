@@ -327,7 +327,8 @@ main .metrics-grid > div {
 /* Page background and main text */
 :root {
   background: #E4F2ED;
-  color: #1E3038;
+  color: #1D4533;
+
 }
 
 /* Audio recording, Transcript, and Performance cards */
@@ -406,4 +407,14 @@ main button:focus-visible,
 main select:focus-visible,
 main input:focus-visible {
   outline-color: #147D73;
+}
+
+/* Transcript text and performance result values */
+main .transcript-text,
+main .metrics-grid dd {
+  color: #165823;
+}
+
+main > h1 {
+  color: #092328;
 }
