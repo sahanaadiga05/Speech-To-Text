@@ -1,36 +1,82 @@
 # Speech To Text
 
-A local speech-to-text application built with React, Node.js, and Qwen3-ASR running on CPU.
+A local speech-to-text application built with React, Node.js, and Qwen3-ASR running on CPU through sherpa-onnx.
 
-The application accepts a WAV recording, uploads its audio progressively through WebSockets, and displays revised transcripts followed by a final result.
+The application accepts a WAV recording, uploads its audio progressively through WebSockets, and displays transcript revisions followed by a final result.
 
 ## Features
 
-- React interface for file selection, language selection, and transcription.
+- React interface for selecting audio and language.
 - Node.js and Express REST API.
 - WebSocket audio upload and transcript updates.
-- Qwen3-ASR-0.6B CPU inference through sherpa-onnx.
-- English, Chinese, and Indonesian language options.
-- WAV format and duration validation.
+- Qwen3-ASR-0.6B with INT8 encoder and decoder.
+- CPU inference using sherpa-onnx.
+- English, Mandarin Chinese, and Bahasa Indonesia samples.
+- WAV format, size, and duration validation.
 - Start and Stop controls.
-- Upload progress, transcript revisions, and performance measurements.
-- Resource monitoring and accuracy evaluation results.
+- Upload progress and transcript revisions.
+- Live elapsed timers and completed-request performance metrics.
+- Resource monitoring and saved accuracy evaluation results.
 
-No database is required for the current prototype.
+## Technology stack
+
+| Component | Technology |
+| --- | --- |
+| Frontend | React + Vite |
+| Styling | CSS |
+| Backend | Node.js + Express |
+| Streaming communication | WebSockets using `ws` |
+| Audio transport | 16 kHz, mono, signed 16-bit PCM |
+| AI model | Qwen3-ASR-0.6B |
+| CPU inference runtime | sherpa-onnx |
+| Inference helper | Python standard-library HTTP server |
+| Backend-to-helper communication | Local HTTP |
+| Resource monitoring | psutil |
+| Accuracy evaluation | jiwer |
+
+The current prototype does not use a database.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Audio["WAV recording"] --> UI["React frontend"]
+    UI -->|"PCM audio chunks via WebSocket"| Backend["Node.js + Express backend"]
+    Backend -->|"WAV audio via local HTTP"| Helper["Python inference helper<br/>Qwen3-ASR + sherpa-onnx<br/>CPU"]
+    Helper -->|"Transcript and inference metrics"| Backend
+    Backend -->|"Partial and final results via WebSocket"| UI
+```
+
+The React frontend handles file selection, WAV validation, upload progress, transcript display, and browser timing.
+
+Node.js manages the REST API, WebSocket sessions, audio chunks, WAV construction, and inference coordination.
+
+The Python helper loads the model once and reuses it for subsequent requests.
+
+A possible scaling approach is to route requests to a pool of inference workers, each with its own recognizer. Worker count, admission limits, and queue sizes would need validation against CPU, memory, latency, and concurrency measurements. This worker pool is a proposed extension.
 
 ## How transcription works
 
-The browser sends 16-bit PCM audio chunks to the Node.js backend.
+1. The browser validates the selected WAV file.
+2. Clicking Start triggers an automatic service-readiness check.
+3. The browser opens a WebSocket connection to Node.js.
+4. Audio is sent as progressively paced PCM chunks.
+5. Node.js constructs WAV snapshots from the audio received so far.
+6. The Python helper transcribes each submitted snapshot.
+7. Node.js forwards transcript revisions and measurements to React.
+8. A final transcript is returned for the complete recording.
 
-Node.js collects the audio and sends cumulative recordings to the Python inference helper. Transcription updates become eligible after approximately four additional seconds of audio have arrived.
+The supplied client normally sends 8,000-byte chunks. At 16 kHz, mono, signed 16-bit PCM, each chunk represents 250 milliseconds of audio.
 
-Each inference request transcribes the audio received so far. The resulting text replaces the previous transcript because earlier words may change as more context becomes available.
+Transcription updates become eligible after approximately four additional seconds of audio have arrived.
 
-This is incremental transcription using repeated offline inference. It does not preserve the model's decoding state between requests.
+Each request transcribes the cumulative recording received so far. This is incremental transcription using repeated offline inference. Model decoding state is not preserved between requests.
 
-Within each session, one inference request runs at a time, and only the latest pending recording is retained. The final request covers the complete uploaded recording.
+Within each session, one inference request runs at a time. Only the latest pending snapshot is retained, allowing obsolete pending updates to be skipped.
 
-The Python helper loads one shared model and allows one inference request at a time.
+Each transcript revision replaces the previous displayed text because earlier words can change as more context becomes available.
+
+The Python helper uses one shared recognizer and permits one inference request at a time.
 
 ## Tested environment
 
@@ -39,50 +85,48 @@ The Python helper loads one shared model and allows one inference request at a t
 | Operating system | Windows 11 Home Single Language |
 | OS build | 26300 |
 | Processor | AMD Ryzen 5 5600H |
-| CPU cores | 6 physical cores, 12 logical processors |
-| Installed memory | 8 GB, approximately 7.38 GiB visible to Windows |
+| Physical CPU cores | 6 |
+| Logical processors | 12 |
+| Installed memory | 8 GB |
+| Memory visible to Windows | Approximately 7.38 GiB |
 | Node.js | 22.14.0 |
 | Python | 3.12.4, 64-bit |
 | Model | Qwen/Qwen3-ASR-0.6B |
-| Inference runtime | sherpa-onnx 1.13.8 |
+| Runtime | sherpa-onnx 1.13.8 |
 | Execution device | CPU |
 | Model configuration | INT8 encoder and decoder |
 | Recognizer threads | 6 |
 
-These are the tested specifications, not verified minimum requirements.
+These specifications describe the tested machine. Minimum hardware requirements have not been established.
 
 ## Installation
 
-The following PowerShell commands assume the project is located at:
+The following instructions use Windows PowerShell and assume the project is located at:
 
 ```text
 C:\BACKEND\STT
 ```
 
-Adjust the paths if you use a different location.
+Adjust the paths if you use another location.
 
-If the application is already installed, skip this section and continue with “Running the application”.
+If the application is already installed, continue with **Running the application**.
 
 ### 1. Clone the repository
 
-Run this only when creating a new checkout:
+Run this when creating a new checkout:
 
 ```powershell
 git clone https://github.com/sahanaadiga05/Speech-To-Text.git 'C:\BACKEND\STT'
 ```
 
-`git clone` downloads the repository and creates the local working directory.
-
-### 2. Install the JavaScript dependencies
+### 2. Install backend and frontend dependencies
 
 ```powershell
 npm --prefix 'C:\BACKEND\STT\backend' ci
 npm --prefix 'C:\BACKEND\STT\frontend' ci
 ```
 
-- `--prefix` selects the directory containing the relevant `package.json`.
-- `ci` installs the dependency versions recorded in `package-lock.json`.
-- Backend and frontend dependencies are installed separately.
+These commands install the versions recorded in the corresponding lockfiles.
 
 ### 3. Create the Python environment
 
@@ -92,40 +136,25 @@ Python 3.12 must be installed and available through the Windows Python launcher.
 py -3.12 -m venv 'C:\BACKEND\STT\inference\onnx-test\.venv'
 ```
 
-- `py -3.12` selects Python 3.12.
-- `-m venv` creates an isolated Python environment.
-- The final path determines where that environment is stored.
-
-Install the saved dependencies into that environment:
+Install the saved Python dependencies:
 
 ```powershell
 & 'C:\BACKEND\STT\inference\onnx-test\.venv\Scripts\python.exe' -m pip install --only-binary=:all: -r 'C:\BACKEND\STT\inference\requirements-onnx.txt'
 ```
 
-- `&` runs the executable specified by the quoted path.
-- The explicit Python path selects the project's ONNX environment.
-- `-m pip install` installs packages using that Python interpreter.
-- `--only-binary=:all:` requests prebuilt packages.
-- `-r` reads the package versions from the requirements file.
+The requirements include packages for inference, audio preparation, resource monitoring, and accuracy evaluation.
 
-The requirements include inference, audio preparation, monitoring, and accuracy evaluation dependencies.
+The normal ONNX application uses this environment. Earlier PyTorch experiments use a separate environment.
 
-The normal ONNX application does not require the earlier PyTorch environment.
+### 4. Download the model
 
-### 4. Download and extract the model
-
-The model files are excluded from Git and must be downloaded separately.
+Model files are excluded from Git and must be downloaded separately.
 
 ```powershell
 curl.exe --fail --location --output 'C:\BACKEND\STT\inference\onnx-test\qwen3-asr-int8.tar.bz2' 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2'
 ```
 
-- `curl.exe` selects the curl program explicitly.
-- `--fail` reports an error for unsuccessful HTTP responses.
-- `--location` follows the GitHub download redirects.
-- `--output` specifies the destination archive.
-
-The download is approximately 838 MiB.
+The archive download is approximately 838 MiB.
 
 Extract it:
 
@@ -133,12 +162,7 @@ Extract it:
 tar.exe -xjf 'C:\BACKEND\STT\inference\onnx-test\qwen3-asr-int8.tar.bz2' -C 'C:\BACKEND\STT\inference\onnx-test'
 ```
 
-- `-x` extracts the archive.
-- `-j` selects bzip2 decompression.
-- `-f` identifies the archive file.
-- `-C` selects the extraction directory.
-
-The following model files and tokenizer directory must exist:
+The helper expects this model directory:
 
 ```text
 inference/onnx-test/
@@ -149,53 +173,63 @@ inference/onnx-test/
     └── tokenizer/
 ```
 
-The helper expects this directory name and location.
+Keep the directory name and location as shown.
 
 ## Running the application
 
-Use three separate PowerShell terminals. Keep one instance of each service running.
+Open the project folder in VS Code.
 
-### Terminal 1: Python inference helper
+Use three separate PowerShell terminals, each starting in the project root:
 
-```powershell
-& 'C:\BACKEND\STT\inference\onnx-test\.venv\Scripts\python.exe' -u 'C:\BACKEND\STT\inference\inference_http.py'
+```text
+C:\BACKEND\STT
 ```
 
-The explicit executable selects the ONNX environment. `-u` makes Python display its output without buffering.
+### Terminal 1: Inference helper
 
-Wait until the program prints the following message. This is expected output, not a command:
+```powershell
+npm run asr
+```
+
+This selects the Python executable inside the ONNX environment and starts the inference helper.
+
+Wait for the following message:
 
 ```text
 Inference helper ready at http://127.0.0.1:8001/health
 ```
 
+This is expected output, not a command.
+
 ### Terminal 2: Node.js backend
 
 ```powershell
-node 'C:\BACKEND\STT\backend\server.js'
+npm run backend
 ```
 
-This starts the Express API and WebSocket server on port 3000.
-
-### Terminal 3: React development server
+### Terminal 3: React frontend
 
 ```powershell
-npm --prefix 'C:\BACKEND\STT\frontend' run dev
+npm run frontend
 ```
 
-This runs the frontend's Vite development server on port 5173.
+Keep one instance of each service running.
 
-Vite forwards `/api` requests and `/ws` connections to the Node.js backend.
+| Service | Address |
+| --- | --- |
+| React frontend | http://127.0.0.1:5173/ |
+| Node.js backend | http://127.0.0.1:3000/ |
+| Python inference helper | http://127.0.0.1:8001/ |
 
-### Verify the connection
+Vite forwards `/api` requests and `/ws` connections to Node.js.
 
-Run this in another terminal:
+### Optional connection check
+
+With all three services running, execute this in another terminal:
 
 ```powershell
 curl.exe --fail --max-time 10 'http://127.0.0.1:5173/api/inference/health'
 ```
-
-`--max-time 10` limits the request to ten seconds.
 
 A successful response includes:
 
@@ -212,34 +246,67 @@ A successful response includes:
 }
 ```
 
-### Use the interface
+## Using the application
 
-Open [http://127.0.0.1:5173/](http://127.0.0.1:5173/) in a browser.
+Open [http://127.0.0.1:5173/](http://127.0.0.1:5173/).
 
-1. Click **Check connection**.
-2. Select the recording's language.
-3. Click **Choose File** and select a supported WAV recording.
-4. Click **Start transcription**.
-5. Follow the upload progress and transcript revisions.
-6. Wait for the final transcript and performance measurements.
+1. Select the recording's language.
+2. Click **Choose File** and select a supported WAV recording.
+3. Click **Start transcription**.
+4. The application automatically checks service readiness.
+5. Follow the upload progress, transcript revisions, and performance measurements.
+6. Wait for the final transcript.
 
-Suggested demonstration files:
+### Demonstration samples
 
-| Language selection | File in the samples directory |
+| Language | Dropdown selection | File |
+| --- | --- | --- |
+| English | English | `samples/english_16k.wav` |
+| Mandarin Chinese | Chinese | `samples/noise2.wav` |
+| Bahasa Indonesia | Indonesian | `samples/indonesian_original.wav` |
+
+Recordings shorter than the four-second update threshold may produce only a final transcript.
+
+### Stop a session
+
+Click **Stop session** to cancel the current client session.
+
+The elapsed timer freezes. If no final result arrived, the interface identifies the session as ended without a final result.
+
+Starting again begins a new session from the start of the recording.
+
+An inference request already running in the helper may continue until it finishes.
+
+### Shut down the application
+
+Press **Ctrl+C** in each service terminal.
+
+## Performance measurements in the interface
+
+| Measurement | Meaning |
 | --- | --- |
-| English | `english_16k.wav` |
-| Chinese | `noise2.wav` |
-| Indonesian | `indonesian_original.wav` |
+| First text latency | Counts live from clicking Start while waiting, then freezes when the first nonempty transcript arrives. |
+| Final result time | Counts live from clicking Start, then freezes when the final transcript arrives. |
+| Latest inference time | The helper's measured inference duration for the latest completed request. |
+| Latest request RTF | Inference duration divided by audio duration for the latest completed request. |
 
-Short recordings below the update threshold may produce only a final transcript.
+The browser timers refresh approximately every 100 milliseconds.
 
-**Stop** cancels the current client session. Starting again begins a new session from the start of the recording. An inference request already running in the helper may continue until it finishes.
+They start before the automatic readiness check, so their elapsed time includes readiness checking, connection setup, upload, and the subsequent transcription flow.
 
-To shut down the application, press **Ctrl+C** in each service terminal.
+If the session stops or fails before a final result, the frozen elapsed value does not represent a successful final-result measurement.
+
+Inference time and RTF become available after a model response. Before then, the interface displays waiting or processing states.
+
+During another request, previously completed measurements may remain visible.
+
+The request RTF describes one inference request. It does not include the upload time or the cost of all earlier cumulative requests.
+
+The saved benchmark results below use the Node.js WebSocket test client's timing origin. That test does not perform the browser's automatic readiness check.
 
 ## Supported audio
 
-The interface accepts recordings with all of these properties:
+The browser accepts recordings with all of these properties:
 
 | Property | Required value |
 | --- | --- |
@@ -250,11 +317,11 @@ The interface accepts recordings with all of these properties:
 | Duration | More than zero and at most 60 seconds |
 | File size | At most 2,000,000 bytes |
 
-A `.wav` extension alone does not guarantee that the recording has the required encoding.
+A `.wav` extension alone does not guarantee the required encoding.
 
-The original `samples/english.wav` uses a different sample rate and bit depth. Use the prepared `samples/english_16k.wav` for the application.
+The interface validates recordings but does not automatically convert unsupported audio.
 
-The interface validates audio but does not automatically convert unsupported recordings.
+The original `samples/english.wav` has a different sample rate and bit depth. Use `samples/english_16k.wav` in the application.
 
 ## REST API
 
@@ -270,36 +337,41 @@ http://127.0.0.1:3000
 | GET | `/api/inference/health` | Check the inference helper through Node.js |
 | POST | `/api/transcribe` | Transcribe a complete WAV recording |
 
-For transcription, send the WAV bytes directly as the request body.
+For transcription, send WAV bytes directly as the request body.
 
-Headers:
+Required content type:
 
 ```text
 Content-Type: audio/wav
+```
+
+Language header:
+
+```text
 X-ASR-Language: English
 ```
 
 Supported language values are `English`, `Chinese`, and `Indonesian`.
 
-Example:
+### Example transcription request
 
 ```powershell
 curl.exe --include --max-time 200 --header 'Content-Type: audio/wav' --header 'X-ASR-Language: English' --data-binary '@C:\BACKEND\STT\samples\english_16k.wav' 'http://127.0.0.1:3000/api/transcribe'
 ```
 
-- `--include` displays the response headers and body.
-- `--max-time 200` allows up to 200 seconds for the request.
-- `--header` supplies the content type and language.
-- `--data-binary` sends the file bytes unchanged.
-- `@` tells curl to read those bytes from the specified file.
+Successful responses contain:
 
-Successful responses contain the language, transcript, audio duration, inference time, and real-time factor.
+- Language.
+- Transcript text.
+- Audio duration.
+- Inference duration.
+- Real-time factor.
 
 Invalid input returns an error response. A busy model returns HTTP 429.
 
 ## WebSocket protocol
 
-The backend WebSocket address is:
+Backend address:
 
 ```text
 ws://127.0.0.1:3000/ws
@@ -307,30 +379,33 @@ ws://127.0.0.1:3000/ws
 
 The browser accesses `/ws` through the Vite proxy.
 
-Client sequence:
+### Client sequence
 
 1. Send a JSON start command.
 2. Wait for `session_started`.
 3. Send binary PCM chunks.
-4. Send a JSON end command after uploading the audio.
+4. Send a JSON end command after uploading all audio.
 
 Start command:
 
 ```json
-{"type":"start","language":"English"}
+{
+  "type": "start",
+  "language": "English"
+}
 ```
 
 End command:
 
 ```json
-{"type":"end"}
+{
+  "type": "end"
+}
 ```
 
 Binary audio must be 16 kHz, mono, signed 16-bit little-endian PCM without a WAV header.
 
-The supplied client normally sends 8,000-byte chunks, representing 250 milliseconds of audio.
-
-Server messages include:
+### Server messages
 
 - `connected`
 - `session_started`
@@ -347,7 +422,7 @@ Each transcript contains the current complete text. Clients should replace the p
 
 ## Verification commands
 
-These commands are available for manual verification. They do not need to run every time the application starts.
+These commands support manual verification. They do not need to run every time the application starts.
 
 ### Queue behavior
 
@@ -357,21 +432,21 @@ node 'C:\BACKEND\STT\backend\test_transcription_queue.js'
 
 Checks that inference tasks do not overlap and that a newer pending task replaces an older pending task.
 
-No running servers are required for this test.
+No running servers are required.
 
 ### WebSocket session commands
 
-Start the Node.js backend, then run:
+Keep the Node.js backend running:
 
 ```powershell
 node 'C:\BACKEND\STT\backend\test_ws.js'
 ```
 
-Checks the connection and the start/end command sequence without transcribing audio.
+Checks the connection and start/end command sequence without transcribing audio.
 
 ### Real-audio WebSocket transcription
 
-Keep the Node.js backend and Python helper running, then run:
+Keep the backend and inference helper running:
 
 ```powershell
 node 'C:\BACKEND\STT\backend\test_transcription_ws.js'
@@ -387,13 +462,13 @@ npm --prefix 'C:\BACKEND\STT\frontend' run build
 ```
 
 - `lint` checks the frontend source using ESLint.
-- `build` generates the production frontend files in `frontend/dist`.
+- `build` compiles the production frontend into `frontend/dist`.
 
-The build command verifies frontend compilation. A production deployment arrangement is outside the current local development setup.
+The build command verifies compilation. The normal run instructions above use the local Vite development server and its backend proxy.
 
 ## Resource monitoring
 
-Keep the Node.js backend and Python helper running, with no other transcription in progress.
+Keep the backend and inference helper running, with no other transcription in progress.
 
 ```powershell
 & 'C:\BACKEND\STT\inference\onnx-test\.venv\Scripts\python.exe' -u 'C:\BACKEND\STT\inference\benchmark_resources.py'
@@ -401,7 +476,7 @@ Keep the Node.js backend and Python helper running, with no other transcription 
 
 This script runs one English WebSocket test and samples CPU and memory usage for the existing backend and helper processes.
 
-It creates a timestamped directory containing:
+It saves results in a timestamped directory:
 
 ```text
 benchmarks/<timestamp>/resources.json
@@ -414,7 +489,9 @@ Process CPU percentages are normalized so that the complete machine represents 1
 
 ## Recorded results
 
-For one paced English WebSocket stream containing approximately 15.051 seconds of audio:
+### English WebSocket stream
+
+The measured recording contained approximately 15.051 seconds of audio.
 
 | Measurement | Recorded value |
 | --- | --- |
@@ -424,52 +501,76 @@ For one paced English WebSocket stream containing approximately 15.051 seconds o
 | Final request RTF | 0.399 |
 | Peak sampled ASR resident memory | 1,714.77 MiB |
 | Peak sampled ASR private memory | 2,660.49 MiB |
+| Average sampled ASR CPU usage | 33.42% of the machine |
+| Peak sampled ASR CPU usage | 58.66% of the machine |
 
-Times for transcript arrival are measured from the client session's start.
+Transcript arrival times were measured from the WebSocket test client's start.
 
-The final request's RTF describes that individual inference request. It does not include all earlier prefix requests or the complete upload/session time.
+The final request's RTF applies to that individual inference request. It does not include all earlier prefix requests or the complete streaming session.
 
-Separate full-recording REST evaluations produced:
+Resident memory and private memory describe different measurements. Private memory is not necessarily all resident in physical RAM.
 
-| Language | Evaluation recording | Inference time | RTF | Accuracy result |
-| --- | --- | --- | --- | --- |
-| English | `english_accuracy_16k.wav`, 19.020 s | 16.536 s | 0.869 | WER 12.903% |
-| Chinese | `noise2.wav`, 22.833 s | 15.420 s | 0.675 | CER 18.868% |
-| Indonesian | `indonesian_original.wav`, 3.713 s | 4.141 s | 1.115 | Not scored; verified reference pending |
+### Separate full-recording REST evaluations
+
+| Language | Recording | Audio duration | Inference time | RTF | Accuracy |
+| --- | --- | --- | --- | --- | --- |
+| English | `english_accuracy_16k.wav` | 19.020 s | 16.536 s | 0.869 | WER 12.903% |
+| Mandarin Chinese | `noise2.wav` | 22.833 s | 15.420 s | 0.675 | CER 18.868% |
+| Bahasa Indonesia | `indonesian_original.wav` | 3.713 s | 4.141 s | 1.115 | Not scored; verified reference pending |
 
 English WER and Chinese CER use supplied reference transcripts with the normalization rules recorded in the performance report.
 
-These are individual sample results, not language-wide accuracy measurements.
+These are individual sample results rather than language-wide accuracy measurements.
 
-A two-client WebSocket test completed one stream successfully. The other received a model-busy error. This demonstrates the current admission behavior, not the hardware's maximum concurrent capacity.
+### Concurrency observation
 
-See [the performance report](docs/performance-report.md) for methodology, resource measurements, accuracy calculations, scaling assumptions, runtime comparison, and limitations.
+A two-client WebSocket test completed one stream successfully. The other received a model-busy error.
+
+This demonstrates the current helper's admission behavior. It does not establish the hardware's maximum concurrent capacity.
+
+### Detailed report
+
+See [the performance report](docs/performance-report.md) for:
+
+- Hardware and runtime configuration.
+- Processing approach.
+- Latency measurements.
+- CPU and memory observations.
+- Accuracy calculations.
+- Concurrency results.
+- Sizing assumptions and estimates.
+- Alternative runtime research.
+- Limitations and conclusions.
 
 ## Limitations
 
-- One helper permits one inference request at a time.
+- One inference helper permits one inference request at a time.
 - Requests competing for the shared recognizer can receive a busy response.
 - Incremental updates repeat inference over cumulative audio.
-- Intermediate pending updates may be skipped when inference is busy.
+- Obsolete pending updates may be skipped.
 - Transcript wording can change between revisions.
-- Stop does not provide pause/resume.
+- Stop cancels the client session and does not provide pause/resume.
+- An inference request already running may continue after the client stops.
 - The 60-second input limit has not been fully resource-profiled.
 - Indonesian accuracy remains unscored without a verified reference.
-- Large-scale capacity figures are estimates rather than measured deployment results.
+- Maximum hardware concurrency has not been established.
+- Large-scale capacity figures in the report are estimates.
 - The current application is a local prototype.
 
 ## Troubleshooting
 
 | Symptom | What to check |
 | --- | --- |
-| Browser cannot open port 5173 | Start the Vite development server and keep its terminal running |
-| Vite reports `ECONNREFUSED` for port 3000 | Start the Node.js backend |
-| Inference health returns HTTP 503 | Check the Python helper terminal and wait for its ready message |
-| Startup reports `EADDRINUSE` | Another server already occupies the port; check the existing instance before starting another |
-| Python cannot import `sherpa_onnx` | Use the Python executable inside `inference/onnx-test/.venv` |
+| Browser cannot open port 5173 | Start the frontend with `npm run frontend` |
+| Vite reports `ECONNREFUSED` for port 3000 | Start the backend with `npm run backend` |
+| Inference health returns HTTP 503 | Start the helper with `npm run asr` and wait for its ready message |
+| Startup reports `EADDRINUSE` | Another server occupies the port; check the existing instance before starting another |
+| Python cannot import `sherpa_onnx` | Confirm dependencies were installed into `inference/onnx-test/.venv` |
+| Model files cannot be found | Check the model directory name and extraction location |
 | WAV input is rejected | Check sample rate, channels, encoding, size, and duration |
 | Model-busy error or HTTP 429 | Wait for the active inference request to finish |
 | Upload reaches 100% but the result is pending | The final inference request may still be running |
+| Inference time or RTF initially shows Waiting | A completed model response is required for those measurements |
 
 Earlier errors remain visible in terminal history after a service recovers. Use a fresh health check to confirm its current state.
 
@@ -482,7 +583,7 @@ backend/
 
 frontend/
     React interface, browser WAV validation,
-    WebSocket client, and Vite configuration
+    WebSocket client, live timers, and Vite configuration
 
 inference/
     Python HTTP helper, audio preparation,
@@ -499,10 +600,12 @@ benchmarks/
     Saved transcription, accuracy, and resource results
 
 docs/
-    Performance report
+    Performance report and architecture source
 ```
 
-Earlier PyTorch experiment scripts are retained for comparison. They are not required to run the current ONNX application.
+The root `package.json` provides the `asr`, `backend`, and `frontend` startup scripts.
+
+Earlier PyTorch experiment scripts are retained for comparison. They are not required to run the ONNX application.
 
 ## Upstream projects and sample sources
 
@@ -510,5 +613,5 @@ Earlier PyTorch experiment scripts are retained for comparison. They are not req
 - [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)
 - [ONNX model archive](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25.tar.bz2)
 - [Original English demonstration recording](https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-ASR-Repo/asr_en.wav)
-- English and Chinese accuracy recordings and supplied references: the downloaded model archive's `test_wavs` directory
+- English and Chinese accuracy recordings and supplied references: the downloaded model archive's `test_wavs` directory.
 - [Indonesian sample source](https://github.com/bookbot-kids/speech-recognizer-bahasa-indonesian)
